@@ -1,14 +1,12 @@
 name: Auto commit
 
 on:
-
   push:
     branches:
       - master
       
   schedule:
-  # - cron: "0 7,9,11 * * 1,3" # See https://crontab.guru/#0_7,9,11_*_*_1,3
-  - cron: "1 * * * *"
+    - cron: "0 * * * *"  # Run every hour
 
 jobs:
   auto_commit:
@@ -16,10 +14,29 @@ jobs:
     steps:
       - name: DEBUG 
         run: echo "::debug::Ref = ${{github.ref}}"
+
       - uses: actions/checkout@v3      
         with:
          persist-credentials: false
          fetch-depth: 0
+
+      - name: Skip randomly outside hour range
+        run: |
+          # Ambil jam sekarang (0-23)
+          now=$(date +%H)
+          
+          # Range yang diperbolehkan (misal jam 08–20)
+          if [ "$now" -lt 8 ] || [ "$now" -gt 20 ]; then
+            echo "🕒 Hour $now is outside allowed range. Exiting."
+            exit 0
+          fi
+
+          # Skip dengan probabilitas 60% (jalan hanya ~40%)
+          r=$((RANDOM % 10))
+          if [ "$r" -lt 6 ]; then
+            echo "🎲 Skipping this run randomly (r=$r)"
+            exit 0
+          fi
 
       - name: Modify last update
         run: |
