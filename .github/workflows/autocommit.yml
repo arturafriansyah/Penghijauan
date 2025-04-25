@@ -24,11 +24,12 @@ jobs:
           git config --local user.name "arturafriansyah"
 
       - name: Setup daily run hour
+        id: set_hour
         run: |
           today=$(date '+%Y-%m-%d')
           hour_file=".daily_run_hour"
+          commit_needed=false
 
-          # Cek apakah file ada dan apakah untuk hari ini
           if [ -f "$hour_file" ]; then
             file_date=$(cut -d',' -f1 "$hour_file")
             if [ "$file_date" != "$today" ]; then
@@ -36,34 +37,47 @@ jobs:
             fi
           fi
 
-          # Jika belum ada, generate dan simpan
           if [ ! -f "$hour_file" ]; then
             hour=$((RANDOM % 13 + 8))
             echo "$today,$hour" > "$hour_file"
+            echo "hour=$hour" >> $GITHUB_OUTPUT
             echo "🕒 Generated run hour: $hour"
-
-            # Commit file .daily_run_hour
-            git add "$hour_file"
-            git commit -m "chore(bot): set daily run hour to $hour for $today"
-            git push origin master
+            echo "commit=true" >> $GITHUB_OUTPUT
           else
             hour=$(cut -d',' -f2 "$hour_file")
-            echo "🕒 Loaded run hour from file: $hour"
+            echo "hour=$hour" >> $GITHUB_OUTPUT
+            echo "commit=false" >> $GITHUB_OUTPUT
+            echo "🕒 Loaded run hour: $hour"
           fi
 
-          # Ambil jam sekarang dan bandingkan
           now=$(date +%H | sed 's/^0*//')
           if [ "$now" -ne "$hour" ]; then
-            echo "⏰ Now is $now, not the scheduled run hour $hour. Skipping."
+            echo "⏰ Now is $now, not the run hour $hour. Skipping."
+            echo "skip=true" >> $GITHUB_OUTPUT
             exit 0
           fi
+          echo "skip=false" >> $GITHUB_OUTPUT
+
+      - name: Commit daily run hour file
+        if: steps.set_hour.outputs.commit == 'true'
+        run: |
+          git add .daily_run_hour
+          git commit -m "chore(bot): set daily run hour to ${{ steps.set_hour.outputs.hour }} for $(date '+%Y-%m-%d')"
+          
+      - name: Push daily hour file
+        if: steps.set_hour.outputs.commit == 'true'
+        uses: ad-m/github-push-action@v0.6.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Modify last update
+        if: steps.set_hour.outputs.skip == 'false'
         run: |
           d=`date '+%Y-%m-%dT%H:%M:%SZ'`
           echo $d > LAST_UPDATED
 
       - name: Commit auto update
+        if: steps.set_hour.outputs.skip == 'false'
         run: |
           arr[0]="chore(bot): 😂 auto commit"
           arr[1]="chore(bot): 😱 auto commit"
@@ -79,4 +93,9 @@ jobs:
           rand=$[$RANDOM % ${#arr[@]}]
           git add LAST_UPDATED
           git commit -m "${arr[$rand]}" || echo "⚠️ Nothing to commit"
-          git push origin master
+
+      - name: Push auto update
+        if: steps.set_hour.outputs.skip == 'false'
+        uses: ad-m/github-push-action@v0.6.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
