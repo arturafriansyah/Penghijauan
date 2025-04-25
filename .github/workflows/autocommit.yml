@@ -12,29 +12,49 @@ jobs:
   auto_commit:
     runs-on: ubuntu-latest
     steps:
-      - name: DEBUG 
-        run: echo "::debug::Ref = ${{github.ref}}"
-
-      - uses: actions/checkout@v3      
+      - name: Checkout
+        uses: actions/checkout@v3
         with:
-         persist-credentials: false
-         fetch-depth: 0
+          persist-credentials: false
+          fetch-depth: 0
 
-      - name: Skip randomly outside hour range
+      - name: Setup Git config
         run: |
-          # Ambil jam sekarang (0-23)
-          now=$(date +%H)
-          
-          # Range yang diperbolehkan (misal jam 08–20)
-          if [ "$now" -lt 8 ] || [ "$now" -gt 20 ]; then
-            echo "🕒 Hour $now is outside allowed range. Exiting."
-            exit 0
+          git config --local user.email "pertamax134@gmail.com"
+          git config --local user.name "arturafriansyah"
+
+      - name: Setup daily run hour
+        run: |
+          today=$(date '+%Y-%m-%d')
+          hour_file=".daily_run_hour"
+
+          # Cek apakah file ada dan apakah untuk hari ini
+          if [ -f "$hour_file" ]; then
+            file_date=$(cut -d',' -f1 "$hour_file")
+            if [ "$file_date" != "$today" ]; then
+              rm "$hour_file"
+            fi
           fi
 
-          # Skip dengan probabilitas 60% (jalan hanya ~40%)
-          r=$((RANDOM % 10))
-          if [ "$r" -lt 6 ]; then
-            echo "🎲 Skipping this run randomly (r=$r)"
+          # Jika belum ada, generate dan simpan
+          if [ ! -f "$hour_file" ]; then
+            hour=$((RANDOM % 13 + 8))
+            echo "$today,$hour" > "$hour_file"
+            echo "🕒 Generated run hour: $hour"
+
+            # Commit file .daily_run_hour
+            git add "$hour_file"
+            git commit -m "chore(bot): set daily run hour to $hour for $today"
+            git push origin master
+          else
+            hour=$(cut -d',' -f2 "$hour_file")
+            echo "🕒 Loaded run hour from file: $hour"
+          fi
+
+          # Ambil jam sekarang dan bandingkan
+          now=$(date +%H | sed 's/^0*//')
+          if [ "$now" -ne "$hour" ]; then
+            echo "⏰ Now is $now, not the scheduled run hour $hour. Skipping."
             exit 0
           fi
 
@@ -42,13 +62,9 @@ jobs:
         run: |
           d=`date '+%Y-%m-%dT%H:%M:%SZ'`
           echo $d > LAST_UPDATED
-          
-      - name: Commit changes
+
+      - name: Commit auto update
         run: |
-          git config --local user.email "pertamax134@gmail.com"
-          git config --local user.name "arturafriansyah"
-          git add -A
-          
           arr[0]="chore(bot): 😂 auto commit"
           arr[1]="chore(bot): 😱 auto commit"
           arr[2]="chore(bot): 👿 auto commit"
@@ -59,13 +75,8 @@ jobs:
           arr[7]="chore(bot): 🤖 auto commit"
           arr[8]="chore(bot): 🟩 auto commit"
           arr[9]="chore(bot): 👻 auto commit"
-          
+
           rand=$[$RANDOM % ${#arr[@]}]
-          
-          git commit -m "${arr[$rand]}"
-          
-      - name: GitHub Push
-        uses: ad-m/github-push-action@v0.6.0
-        with:
-          directory: "."
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          git add LAST_UPDATED
+          git commit -m "${arr[$rand]}" || echo "⚠️ Nothing to commit"
+          git push origin master
